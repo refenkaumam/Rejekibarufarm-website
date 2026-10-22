@@ -1,0 +1,15 @@
+services:
+  db:
+    image: mysql:8
+    container_name: rejeki-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: rejeki
+    ports:
+      - "3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+volumes:
+  dbdata:
