@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react'
 import { req } from '../../api/client'
 import { num, rp, berat, bln } from '../../utils/format'
-import { Field, Empty, Pager } from '../../components/ui'
-import { usePaged } from '../../ui/usePaged'
+import { Field, Empty } from '../../components/ui'
 
 const PERIODE = { 1: 'Tgl 1-10', 2: 'Tgl 11-20', 3: 'Tgl 21-akhir' }
 
 function Tabel({ judul, list, fmt }) {
-  const pg = usePaged(list)
   return (
     <div className="panel tw"><h3>{judul}</h3>
       <table><thead><tr><th>Periode</th><th>Penadah</th><th>Jumlah</th><th>Total</th></tr></thead>
-        <tbody>{pg.rows.map((r, i) => <tr key={i}><td>{PERIODE[r.periode]}</td><td>{r.pembeli}</td><td>{fmt(r.jumlah)}</td><td><b>{rp(r.total)}</b></td></tr>)}</tbody></table>
-      <Pager {...pg} />
+        <tbody>{list.map((r, i) => <tr key={i}><td>{PERIODE[r.periode]}</td><td>{r.pembeli}</td><td>{fmt(r.jumlah)}</td><td><b>{rp(r.total)}</b></td></tr>)}</tbody></table>
       {!list.length && <Empty text="Belum ada penjualan di bulan ini." />}
     </div>)
 }

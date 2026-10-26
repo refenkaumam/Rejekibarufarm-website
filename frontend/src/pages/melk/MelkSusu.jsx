@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
 import { today, num, rp, tglID, bln } from '../../utils/format'
-import { Field, Stat, Empty, Pager } from '../../components/ui'
-import { usePaged } from '../../ui/usePaged'
+import { Field, Stat, Empty } from '../../components/ui'
 
 export default function MelkSusu() {
   const [masuk, setMasuk] = useState([])
   const [keluar, setKeluar] = useState([])
   const [form, setForm] = useState({ tgl: today(), liter: '', harga_per_liter: '', pembeli: '' })
   const [err, setErr] = useState('')
-  const pk = usePaged(keluar)
-  const pm = usePaged(masuk)
   const load = useCallback(() => {
     req('/melk/susu?arah=masuk').then(setMasuk).catch(e => setErr(e.message))
     req('/melk/susu?arah=keluar').then(setKeluar).catch(() => {})
@@ -46,15 +43,13 @@ export default function MelkSusu() {
     </div>
     <div className="panel tw"><h3>Susu keluar</h3>
       <table><thead><tr><th>Tanggal</th><th>Dijual ke</th><th>Liter</th><th>Total</th><th></th></tr></thead>
-        <tbody>{pk.rows.map(r => <tr key={r.id}><td>{tglID(r.tgl)}</td><td>{r.pembeli}</td><td>{num(r.liter)} L</td><td><b>{rp(r.harga)}</b></td>
+        <tbody>{keluar.map(r => <tr key={r.id}><td>{tglID(r.tgl)}</td><td>{r.pembeli}</td><td>{num(r.liter)} L</td><td><b>{rp(r.harga)}</b></td>
           <td style={{ textAlign: 'right' }}><button className="del" onClick={() => hapus(r.id)}>Hapus</button></td></tr>)}</tbody></table>
-      <Pager {...pk} />
       {!keluar.length && <Empty text="Belum ada susu keluar." />}
     </div>
     <div className="panel tw"><h3>Susu masuk dari kandang</h3>
       <table><thead><tr><th>Tanggal</th><th>Liter</th><th>Total harga</th></tr></thead>
-        <tbody>{pm.rows.map(r => <tr key={r.id}><td>{tglID(r.tgl)}</td><td>{num(r.liter)} L</td><td>{rp(r.harga)}</td></tr>)}</tbody></table>
-      <Pager {...pm} />
+        <tbody>{masuk.map(r => <tr key={r.id}><td>{tglID(r.tgl)}</td><td>{num(r.liter)} L</td><td>{rp(r.harga)}</td></tr>)}</tbody></table>
       {!masuk.length && <Empty text="Belum ada susu masuk. Data muncul saat kandang menjual susu ke Melk by RBF." />}
     </div>
   </>)

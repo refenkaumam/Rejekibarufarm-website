@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
 import { today, num, rp, tglID } from '../../utils/format'
-import { Field, Stat, Empty, Pager } from '../../components/ui'
-import { usePaged } from '../../ui/usePaged'
+import { Field, Stat, Empty } from '../../components/ui'
 
 const TUJUAN = { koperasi: 'Koperasi', melk_rbf: 'Melk by RBF' }
 
@@ -10,7 +9,6 @@ export default function Penjualan() {
   const [list, setList] = useState([])
   const [form, setForm] = useState({ tgl: today(), tujuan: 'koperasi', liter: '', harga_per_liter: '' })
   const [err, setErr] = useState('')
-  const pg = usePaged(list)
   const load = useCallback(() => req('/penjualan').then(setList).catch(e => setErr(e.message)), [])
   useEffect(() => { load() }, [load])
   const simpan = async (e) => {
@@ -46,10 +44,9 @@ export default function Penjualan() {
     <div className="panel tw">
       <table>
         <thead><tr><th>Tanggal</th><th>Tujuan</th><th>Liter</th><th>Harga/L</th><th>Total</th><th></th></tr></thead>
-        <tbody>{pg.rows.map(p => <tr key={p.id}><td>{tglID(p.tgl)}</td><td>{TUJUAN[p.tujuan]}</td><td>{num(p.liter)} L</td><td>{rp(p.harga_per_liter)}</td><td><b>{rp(p.total)}</b></td>
+        <tbody>{list.map(p => <tr key={p.id}><td>{tglID(p.tgl)}</td><td>{TUJUAN[p.tujuan]}</td><td>{num(p.liter)} L</td><td>{rp(p.harga_per_liter)}</td><td><b>{rp(p.total)}</b></td>
           <td style={{ textAlign: 'right' }}><button className="del" onClick={() => hapus(p.id)}>Hapus</button></td></tr>)}</tbody>
       </table>
-      <Pager {...pg} />
       {!list.length && <Empty text="Belum ada penjualan susu." />}
     </div>
   </>)

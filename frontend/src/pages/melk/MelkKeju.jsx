@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
 import { today, rp, tglID, berat, bln } from '../../utils/format'
-import { Field, Stat, Empty, Pager } from '../../components/ui'
-import { usePaged } from '../../ui/usePaged'
+import { Field, Stat, Empty } from '../../components/ui'
 
 const kosongKeju = () => ({ tgl: today(), arah: 'masuk', jumlah: '', satuan: 'kg', harga: '', pembeli: '' })
 
 function Tabel({ judul, list, jual, hapus }) {
-  const pg = usePaged(list)
   return (
     <div className="panel tw"><h3>{judul}</h3>
       <table><thead><tr><th>Tanggal</th>{jual && <th>Dijual ke</th>}<th>Jumlah</th><th>Harga</th><th></th></tr></thead>
-        <tbody>{pg.rows.map(r => <tr key={r.id}><td>{tglID(r.tgl)}</td>{jual && <td>{r.pembeli}</td>}<td>{berat(r.gram)}</td><td><b>{rp(r.harga)}</b></td>
+        <tbody>{list.map(r => <tr key={r.id}><td>{tglID(r.tgl)}</td>{jual && <td>{r.pembeli}</td>}<td>{berat(r.gram)}</td><td><b>{rp(r.harga)}</b></td>
           <td style={{ textAlign: 'right' }}><button className="del" onClick={() => hapus(r.id)}>Hapus</button></td></tr>)}</tbody></table>
-      <Pager {...pg} />
       {!list.length && <Empty text="Belum ada data." />}
     </div>)
 }
