@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
-import { Field } from '../../components/ui'
+import { Field, Pager } from '../../components/ui'
+import { usePaged } from '../../ui/usePaged'
 
 const ROLES = { super_admin: 'Super admin', owner: 'Owner', peternakan: 'Peternakan', melk: 'Melk by RBF', back_office: 'Back office' }
 
@@ -37,6 +38,7 @@ export default function Akun() {
   const [form, setForm] = useState({ username: '', password: '', role: 'peternakan', menus: DEF.peternakan })
   const [edit, setEdit] = useState(null)
   const [err, setErr] = useState('')
+  const pg = usePaged(list)
   const load = useCallback(() => req('/users').then(setList).catch(e => setErr(e.message)), [])
   useEffect(() => { load() }, [load])
   const simpan = async (e) => {
@@ -71,11 +73,12 @@ export default function Akun() {
     </div>}
     <div className="panel tw">
       <table><thead><tr><th>Username</th><th>Role</th><th>Menu</th><th></th></tr></thead>
-        <tbody>{list.map(u => <tr key={u.id}><td><b>{u.username}</b></td><td><span className="pill">{ROLES[u.role]}</span></td>
+        <tbody>{pg.rows.map(u => <tr key={u.id}><td><b>{u.username}</b></td><td><span className="pill">{ROLES[u.role]}</span></td>
           <td style={{ maxWidth: 360 }}>{u.role === 'super_admin' ? 'Semua menu' : (u.menus.length ? u.menus.map(k => NAMA[k]).join(', ') : 'Tidak ada menu')}</td>
           <td style={{ textAlign: 'right' }}>
             {u.role !== 'super_admin' && <button className="ghost" onClick={() => setEdit({ id: u.id, username: u.username, menus: u.menus })}>Atur akses</button>}{' '}
             <button className="del" onClick={() => hapus(u.id)}>Hapus</button></td></tr>)}</tbody></table>
+      <Pager {...pg} />
     </div>
   </>)
 }

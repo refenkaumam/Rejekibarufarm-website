@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"database/sql"
+
 	"github.com/gin-gonic/gin"
 
 	"rejeki-baru-farm/internal/database"
+	"rejeki-baru-farm/internal/services"
 )
 
 // ---------- Penjualan susu ----------
@@ -11,7 +14,7 @@ func ListPenjualan(c *gin.Context) {
 	rows, err := database.DB.Query(`SELECT id,tgl,tujuan,liter,harga_per_liter,liter*harga_per_liter
 		FROM penjualan_susu ORDER BY tgl DESC,id DESC LIMIT 100`)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		fail(c, "list penjualan", err)
 		return
 	}
 	defer rows.Close()
@@ -20,7 +23,10 @@ func ListPenjualan(c *gin.Context) {
 		var id int64
 		var tgl, tujuan string
 		var l, h, t float64
-		rows.Scan(&id, &tgl, &tujuan, &l, &h, &t)
+		if err := rows.Scan(&id, &tgl, &tujuan, &l, &h, &t); err != nil {
+			fail(c, "list penjualan", err)
+			return
+		}
 		out = append(out, gin.H{"id": id, "tgl": tgl, "tujuan": tujuan, "liter": l, "harga_per_liter": h, "total": t})
 	}
 	c.JSON(200, out)
@@ -34,38 +40,85 @@ func AddPenjualan(c *gin.Context) {
 		Liter  float64 `json:"liter"`
 		Harga  float64 `json:"harga_per_liter"`
 	}
-	if c.BindJSON(&in) != nil {
+	if !bindJSON(c, &in) {
 		return
 	}
 	if in.Tgl == "" || (in.Tujuan != "koperasi" && in.Tujuan != "melk_rbf") || in.Liter <= 0 || in.Harga < 0 {
-		c.JSON(400, gin.H{"error": "Tanggal, tujuan, liter, dan harga wajib diisi"})
+		bad(c, "Tanggal, tujuan, liter, dan harga wajib diisi")
+		return
+	}
+	if !validTgl(in.Tgl) {
+		bad(c, "Tanggal tidak valid")
 		return
 	}
 	total := in.Liter * in.Harga
-	tx, _ := database.DB.Begin()
-	res, err := tx.Exec("INSERT INTO penjualan_susu (tgl,tujuan,liter,harga_per_liter) VALUES (?,?,?,?)", in.Tgl, in.Tujuan, in.Liter, in.Harga)
-	if err != nil {
-		tx.Rollback()
-		c.JSON(500, gin.H{"error": "Gagal simpan"})
+	if !inRange(in.Liter, 0.01, maxLiter) || !inRange(in.Harga, 0, maxUang) || !inRange(total, 0, maxUang) {
+		bad(c, "Liter atau harga di luar batas wajar")
 		return
 	}
-	id, _ := res.LastInsertId()
-	tx.Exec(`INSERT INTO kas (tgl,unit,arah,kategori,jumlah,keterangan,ref_tabel,ref_id)
-		VALUES (?,'kandang','masuk','pembelian_susu',?,?,'penjualan_susu',?)`, in.Tgl, total, "Jual susu ke "+in.Tujuan, id)
-	if in.Tujuan == "melk_rbf" {
-		tx.Exec("INSERT INTO melk_susu (tgl,arah,liter,harga,ref_id) VALUES (?,'masuk',?,?,?)", in.Tgl, in.Liter, total, id)
-		tx.Exec(`INSERT INTO kas (tgl,unit,arah,kategori,jumlah,keterangan,ref_tabel,ref_id)
-			VALUES (?,'melk','keluar','beli_susu',?,'Beli susu dari kandang','penjualan_susu',?)`, in.Tgl, total, id)
+	err := withTx(func(tx *sql.Tx) error {
+		res, err := tx.Exec("INSERT INTO penjualan_susu (tgl,tujuan,liter,harga_per_liter) VALUES (?,?,?,?)", in.Tgl, in.Tujuan, in.Liter, in.Harga)
+		if err != nil {
+			return err
+		}
+		id, _ := res.LastInsertId()
+		if _, err := tx.Exec(`INSERT INTO kas (tgl,unit,arah,kategori,jumlah,keterangan,ref_tabel,ref_id)
+			VALUES (?,'kandang','masuk','pembelian_susu',?,?,'penjualan_susu',?)`, in.Tgl, total, "Jual susu ke "+in.Tujuan, id); err != nil {
+			return err
+		}
+		if in.Tujuan == "melk_rbf" {
+			if _, err := tx.Exec("INSERT INTO melk_susu (tgl,arah,liter,harga,ref_id) VALUES (?,'masuk',?,?,?)", in.Tgl, in.Liter, total, id); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO kas (tgl,unit,arah,kategori,jumlah,keterangan,ref_tabel,ref_id)
+				VALUES (?,'melk','keluar','beli_susu',?,'Beli susu dari kandang','penjualan_susu',?)`, in.Tgl, total, id); err != nil {
+				return err
+			}
+		}
+		after, err := services.Snapshot(tx, "penjualan_susu", id)
+		if err != nil {
+			return err
+		}
+		return audit(tx, c, "tambah", "penjualan_susu", id, nil, after)
+	})
+	if done(c, "tambah penjualan", err) {
+		ok(c)
 	}
-	tx.Commit()
-	c.JSON(200, gin.H{"ok": true})
 }
 
 func DelPenjualan(c *gin.Context) {
-	tx, _ := database.DB.Begin()
-	tx.Exec("DELETE FROM kas WHERE ref_tabel='penjualan_susu' AND ref_id=?", c.Param("id"))
-	tx.Exec("DELETE FROM melk_susu WHERE ref_id=?", c.Param("id"))
-	tx.Exec("DELETE FROM penjualan_susu WHERE id=?", c.Param("id"))
-	tx.Commit()
-	c.JSON(200, gin.H{"ok": true})
+	id, valid := paramID(c)
+	if !valid {
+		return
+	}
+	err := withTx(func(tx *sql.Tx) error {
+		row, err := services.Snapshot(tx, "penjualan_susu", id)
+		if err != nil {
+			return err
+		}
+		if row == nil {
+			return errNotFound
+		}
+		kas, err := services.SnapshotWhere(tx, "kas", "ref_tabel='penjualan_susu' AND ref_id=?", id)
+		if err != nil {
+			return err
+		}
+		susu, err := services.SnapshotWhere(tx, "melk_susu", "ref_id=? AND arah='masuk'", id)
+		if err != nil {
+			return err
+		}
+		for _, q := range []string{
+			"DELETE FROM kas WHERE ref_tabel='penjualan_susu' AND ref_id=?",
+			"DELETE FROM melk_susu WHERE ref_id=? AND arah='masuk'",
+			"DELETE FROM penjualan_susu WHERE id=?",
+		} {
+			if _, err := tx.Exec(q, id); err != nil {
+				return err
+			}
+		}
+		return audit(tx, c, "hapus", "penjualan_susu", id, map[string]any{"penjualan_susu": row, "kas": kas, "melk_susu": susu}, nil)
+	})
+	if done(c, "hapus penjualan", err) {
+		ok(c)
+	}
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
 import { today, rp, tglID } from '../../utils/format'
-import { Field, Stat, Empty } from '../../components/ui'
+import { Field, Stat, Empty, Pager } from '../../components/ui'
+import { usePaged } from '../../ui/usePaged'
 
 const kosongInv = { nama: '', kontak: '', jumlah_invest: '', mulai: today(), selesai: '', nomor_sapi: '' }
 
@@ -12,6 +13,8 @@ export default function Investor() {
   const [editId, setEditId] = useState(null)
   const [fb, setFb] = useState({ investor_id: '', tgl: today(), jumlah: '', keterangan: '' })
   const [err, setErr] = useState('')
+  const pi = usePaged(list)
+  const pb = usePaged(bayar)
   const load = useCallback(() => {
     req('/investor').then(setList).catch(e => setErr(e.message))
     req('/investor-bayar').then(setBayar).catch(() => {})
@@ -56,12 +59,13 @@ export default function Investor() {
     <div className="panel tw">
       <table>
         <thead><tr><th>Nama</th><th>Modal</th><th>Periode</th><th>Nomor sapi</th><th>Sudah dibayar</th><th></th></tr></thead>
-        <tbody>{list.map(i => <tr key={i.id}><td><b>{i.nama}</b><div style={{ color: 'var(--muted)', fontSize: 12 }}>{i.kontak}</div></td>
+        <tbody>{pi.rows.map(i => <tr key={i.id}><td><b>{i.nama}</b><div style={{ color: 'var(--muted)', fontSize: 12 }}>{i.kontak}</div></td>
           <td>{rp(i.jumlah_invest)}</td><td>{tglID(i.mulai)} - {tglID(i.selesai)}</td><td>{i.nomor_sapi || '-'}</td><td>{rp(i.total_dibayar)}</td>
           <td style={{ textAlign: 'right' }}>
             <button className="ghost" onClick={() => { setEditId(i.id); setForm({ ...i, mulai: i.mulai.slice(0, 10), selesai: i.selesai.slice(0, 10) }) }}>Edit</button>{' '}
             <button className="del" onClick={() => hapus(i.id)}>Hapus</button></td></tr>)}</tbody>
       </table>
+      <Pager {...pi} />
       {!list.length && <Empty text="Belum ada investor." />}
     </div>
     <div className="panel">
@@ -79,9 +83,10 @@ export default function Investor() {
       <h3>Riwayat pembayaran</h3>
       <table>
         <thead><tr><th>Tanggal</th><th>Investor</th><th>Jumlah</th><th>Keterangan</th><th></th></tr></thead>
-        <tbody>{bayar.map(b => <tr key={b.id}><td>{tglID(b.tgl)}</td><td>{b.nama}</td><td><b>{rp(b.jumlah)}</b></td><td>{b.keterangan}</td>
+        <tbody>{pb.rows.map(b => <tr key={b.id}><td>{tglID(b.tgl)}</td><td>{b.nama}</td><td><b>{rp(b.jumlah)}</b></td><td>{b.keterangan}</td>
           <td style={{ textAlign: 'right' }}><button className="del" onClick={async () => { await req(`/investor-bayar/${b.id}`, 'DELETE'); load() }}>Hapus</button></td></tr>)}</tbody>
       </table>
+      <Pager {...pb} />
       {!bayar.length && <Empty text="Belum ada pembayaran." />}
     </div>
   </>)

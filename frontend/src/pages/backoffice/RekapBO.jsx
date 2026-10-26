@@ -9,6 +9,12 @@ const akhirBulan = () => { const d = new Date(); return new Date(d.getFullYear()
 
 const boleh = () => ['super_admin', 'owner'].includes((JSON.parse(localStorage.getItem('user') || '{}')).role)
 
+const Tabel = ({ judul, list, total }) => (
+  <div className="panel tw"><h3>{judul}</h3>
+    <table><tbody>{list.map(x => <tr key={x.label}><td>{x.label}</td><td style={{ textAlign: 'right' }}>{rp(x.jumlah)}</td></tr>)}
+      <tr><td><b>Total {judul.toLowerCase()}</b></td><td style={{ textAlign: 'right' }}><b>{rp(total)}</b></td></tr></tbody></table>
+  </div>)
+
 export default function RekapBO() {
   const [r, setR] = useState({})
   const [dari, setDari] = useState(awalBulan())
@@ -17,16 +23,11 @@ export default function RekapBO() {
   useEffect(() => { req('/bo/ringkasan').then(setR).catch(() => {}) }, [])
   useEffect(() => { req(`/bo/labarugi?dari=${dari}&sampai=${sampai}`).then(setD).catch(() => {}) }, [dari, sampai])
   const unduh = async () => {
-    const res = await fetch(`${API}/bo/export?dari=${dari}&sampai=${sampai}`, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+    const res = await fetch(`${API}/bo/export?dari=${encodeURIComponent(dari)}&sampai=${encodeURIComponent(sampai)}`, { credentials: 'include' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(await res.blob()); a.download = `laporan_${dari}_${sampai}.csv`; a.click()
   }
   const lr = d.lr
-  const Tabel = ({ judul, list, total }) => (
-    <div className="panel tw"><h3>{judul}</h3>
-      <table><tbody>{list.map(x => <tr key={x.label}><td>{x.label}</td><td style={{ textAlign: 'right' }}>{rp(x.jumlah)}</td></tr>)}
-        <tr><td><b>Total {judul.toLowerCase()}</b></td><td style={{ textAlign: 'right' }}><b>{rp(total)}</b></td></tr></tbody></table>
-    </div>)
   return (<>
     <h1>Rekap Keuangan Keseluruhan</h1><p className="sub">Gabungan kas kandang, Melk by RBF, dan back office.</p>
     <div className="stats">

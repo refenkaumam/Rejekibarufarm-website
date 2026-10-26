@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"database/sql"
 	"encoding/csv"
 	"strconv"
 	"strings"
@@ -12,7 +13,8 @@ import (
 	"rejeki-baru-farm/internal/services"
 )
 
-func rangeQuery(c *gin.Context) (string, string) {
+// rangeQuery membaca ?dari=&sampai= (YYYY-MM-DD); bawaan bulan ini.
+func rangeQuery(c *gin.Context) (string, string, bool) {
 	d, s := services.MonthRange(time.Now().Format("2006-01"))
 	if v := c.Query("dari"); v != "" {
 		d = v
@@ -20,7 +22,13 @@ func rangeQuery(c *gin.Context) (string, string) {
 	if v := c.Query("sampai"); v != "" {
 		s = v
 	}
-	return d, s
+	td, ok1 := parseTgl(d)
+	ts, ok2 := parseTgl(s)
+	if !ok1 || !ok2 || ts.Before(td) {
+		bad(c, "Rentang tanggal tidak valid")
+		return "", "", false
+	}
+	return d, s, true
 }
 
 func BoRingkasan(c *gin.Context) {
@@ -37,7 +45,10 @@ func BoRingkasan(c *gin.Context) {
 }
 
 func BoLabaRugi(c *gin.Context) {
-	d, s := rangeQuery(c)
+	d, s, valid := rangeQuery(c)
+	if !valid {
+		return
+	}
 	c.JSON(200, gin.H{"dari": d, "sampai": s, "lr": services.HitungLR(d, s)})
 }
 
@@ -51,21 +62,38 @@ func BoSetKasAwal(c *gin.Context) {
 		Tgl    string  `json:"tgl"`
 		Jumlah float64 `json:"jumlah"`
 	}
-	if c.BindJSON(&in) != nil {
+	if !bindJSON(c, &in) {
 		return
 	}
 	if in.Tgl == "" || in.Jumlah < 0 {
-		c.JSON(400, gin.H{"error": "Tanggal dan jumlah kas awal wajib diisi"})
+		bad(c, "Tanggal dan jumlah kas awal wajib diisi")
 		return
 	}
-	database.DB.Exec("INSERT INTO kas_awal_bo (tgl,jumlah) VALUES (?,?)", in.Tgl, in.Jumlah)
-	c.JSON(200, gin.H{"ok": true})
+	if !validTgl(in.Tgl) || !inRange(in.Jumlah, 0, maxUang) {
+		bad(c, "Tanggal atau jumlah kas awal tidak valid")
+		return
+	}
+	err := withTx(func(tx *sql.Tx) error {
+		res, err := tx.Exec("INSERT INTO kas_awal_bo (tgl,jumlah) VALUES (?,?)", in.Tgl, in.Jumlah)
+		if err != nil {
+			return err
+		}
+		id, _ := res.LastInsertId()
+		after, err := services.Snapshot(tx, "kas_awal_bo", id)
+		if err != nil {
+			return err
+		}
+		return audit(tx, c, "tambah", "kas_awal_bo", id, nil, after)
+	})
+	if done(c, "kas awal bo", err) {
+		ok(c)
+	}
 }
 
 func BoListKas(c *gin.Context) {
-	bulan := c.Query("bulan")
-	if bulan == "" {
-		bulan = time.Now().Format("2006-01")
+	bulan, valid := bulanParam(c)
+	if !valid {
+		return
 	}
 	rows, err := database.DB.Query(`
 		SELECT id,tgl,arah,kategori,jumlah,IFNULL(keterangan,''),0 FROM kas WHERE unit='back_office' AND DATE_FORMAT(tgl,'%Y-%m')=?
@@ -73,7 +101,7 @@ func BoListKas(c *gin.Context) {
 		SELECT id,tgl,'keluar','topup_kandang',jumlah,'Top up ke kandang',1 FROM kas WHERE unit='kandang' AND kategori='topup_bo' AND DATE_FORMAT(tgl,'%Y-%m')=?
 		ORDER BY tgl DESC,id DESC`, bulan, bulan)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		fail(c, "list kas bo", err)
 		return
 	}
 	defer rows.Close()
@@ -84,7 +112,10 @@ func BoListKas(c *gin.Context) {
 		var tgl, arah, kat, ket string
 		var j float64
 		var auto bool
-		rows.Scan(&id, &tgl, &arah, &kat, &j, &ket, &auto)
+		if err := rows.Scan(&id, &tgl, &arah, &kat, &j, &ket, &auto); err != nil {
+			fail(c, "list kas bo", err)
+			return
+		}
 		if arah == "masuk" {
 			masuk += j
 		} else {
@@ -96,40 +127,45 @@ func BoListKas(c *gin.Context) {
 }
 
 func BoAddKas(c *gin.Context) {
-	var in struct {
-		Tgl        string  `json:"tgl"`
-		Arah       string  `json:"arah"`
-		Kategori   string  `json:"kategori"`
-		Jumlah     float64 `json:"jumlah"`
-		Keterangan string  `json:"keterangan"`
-	}
-	if c.BindJSON(&in) != nil {
-		return
-	}
-	ok := map[string]map[string]bool{
+	addKas(c, "back_office", map[string]map[string]bool{
 		"masuk":  {"kas": true, "lainnya": true},
 		"keluar": {"gaji": true, "operasional": true, "lainnya": true},
-	}
-	if in.Tgl == "" || in.Jumlah <= 0 || !ok[in.Arah][in.Kategori] {
-		c.JSON(400, gin.H{"error": "Tanggal, kategori, dan jumlah wajib diisi"})
-		return
-	}
-	database.DB.Exec(`INSERT INTO kas (tgl,unit,arah,kategori,jumlah,keterangan) VALUES (?,'back_office',?,?,?,?)`,
-		in.Tgl, in.Arah, in.Kategori, in.Jumlah, in.Keterangan)
-	c.JSON(200, gin.H{"ok": true})
+	})
 }
 
 func BoDelKas(c *gin.Context) {
-	database.DB.Exec("DELETE FROM kas WHERE id=? AND unit='back_office'", c.Param("id"))
-	c.JSON(200, gin.H{"ok": true})
+	if found, err := delKas(c, "back_office"); err == nil && !found {
+		done(c, "", errNotFound)
+	}
+}
+
+// csvSafe mencegah formula injection saat file dibuka di Excel/Spreadsheet.
+func csvSafe(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
 }
 
 // Export CSV (buka di Excel): laba rugi + semua transaksi kas pada rentang tanggal
 func BoExport(c *gin.Context) {
-	d, s := rangeQuery(c)
+	d, s, valid := rangeQuery(c)
+	if !valid {
+		return
+	}
+	rows, err := database.DB.Query(`SELECT tgl,unit,arah,kategori,jumlah,IFNULL(keterangan,'') FROM kas WHERE tgl BETWEEN ? AND ? ORDER BY tgl,id`, d, s)
+	if err != nil {
+		fail(c, "export", err)
+		return
+	}
+	defer rows.Close()
+	if err := audit(database.DB, c, "ekspor", "kas", 0, nil, map[string]string{"dari": d, "sampai": s}); err != nil {
+		fail(c, "export", err)
+		return
+	}
 	lr := services.HitungLR(d, s)
 	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=laporan_"+d+"_"+s+".csv")
+	c.Header("Content-Disposition", `attachment; filename="laporan_`+d+"_"+s+`.csv"`)
 	c.Writer.WriteString("\xEF\xBB\xBF")
 	w := csv.NewWriter(c.Writer)
 	w.Comma = ';'
@@ -151,15 +187,13 @@ func BoExport(c *gin.Context) {
 	w.Write([]string{})
 	w.Write([]string{"TRANSAKSI KAS"})
 	w.Write([]string{"Tanggal", "Unit", "Arah", "Kategori", "Jumlah", "Keterangan"})
-	rows, err := database.DB.Query(`SELECT tgl,unit,arah,kategori,jumlah,IFNULL(keterangan,'') FROM kas WHERE tgl BETWEEN ? AND ? ORDER BY tgl,id`, d, s)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var tgl, u, a, k, ket string
-			var j float64
-			rows.Scan(&tgl, &u, &a, &k, &j, &ket)
-			w.Write([]string{tgl, u, a, k, f(j), ket})
+	for rows.Next() {
+		var tgl, u, a, k, ket string
+		var j float64
+		if err := rows.Scan(&tgl, &u, &a, &k, &j, &ket); err != nil {
+			break
 		}
+		w.Write([]string{csvSafe(tgl), csvSafe(u), csvSafe(a), csvSafe(k), f(j), csvSafe(ket)})
 	}
 	w.Flush()
 }

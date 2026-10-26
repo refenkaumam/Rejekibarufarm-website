@@ -12,5 +12,6 @@ func registerUsers(api *gin.RouterGroup) {
 	u.GET("", controllers.ListUsers)
 	u.POST("", controllers.AddUser)
 	u.PUT("/:id/menus", controllers.SetMenus)
+	u.PUT("/:id/password", controllers.ResetPassword)
 	u.DELETE("/:id", controllers.DelUser)
 }

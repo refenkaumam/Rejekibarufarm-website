@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
-import { bln } from '../../utils/format'
-import { Field, Stat, Empty } from '../../components/ui'
+import { Field, Stat, Empty, Pager } from '../../components/ui'
+import { usePaged } from '../../ui/usePaged'
 
 const STATUS = ['laktasi', 'kering', 'dara', 'pedet']
 
@@ -12,6 +12,7 @@ export default function Sapi() {
   const [form, setForm] = useState(kosongSapi)
   const [editId, setEditId] = useState(null)
   const [err, setErr] = useState('')
+  const pg = usePaged(list)
   const load = useCallback(() => req('/sapi').then(setList).catch(e => setErr(e.message)), [])
   useEffect(() => { load() }, [load])
   const simpan = async (e) => {
@@ -45,13 +46,14 @@ export default function Sapi() {
     <div className="panel tw">
       <table>
         <thead><tr><th>Nomor</th><th>Nama</th><th>Umur</th><th>Anak</th><th>Status</th><th></th></tr></thead>
-        <tbody>{list.map(s => (
+        <tbody>{pg.rows.map(s => (
           <tr key={s.id}><td>{s.nomor}</td><td><b>{s.nama}</b></td><td>{umur(s.umur_bulan)}</td><td>{s.jumlah_anak}</td>
             <td><span className={'pill ' + s.status}>{s.status}</span></td>
             <td style={{ textAlign: 'right' }}>
               <button className="ghost" onClick={() => { setEditId(s.id); setForm({ ...s, tgl_lahir: s.tgl_lahir.slice(0, 10) }) }}>Edit</button>{' '}
               <button className="del" onClick={() => hapus(s.id)}>Hapus</button></td></tr>))}</tbody>
       </table>
+      <Pager {...pg} />
       {!list.length && <Empty text="Belum ada sapi. Tambahkan sapi pertama lewat form di atas." />}
     </div>
   </>)

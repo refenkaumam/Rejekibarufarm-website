@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
 import { today, num, tglID } from '../../utils/format'
-import { Field, Stat, Empty } from '../../components/ui'
+import { Field, Stat, Empty, Pager } from '../../components/ui'
+import { usePaged } from '../../ui/usePaged'
 
 export default function Produksi() {
   const [list, setList] = useState([])
@@ -9,6 +10,8 @@ export default function Produksi() {
   const [by, setBy] = useState('bulan')
   const [form, setForm] = useState({ tgl: today(), sesi: 'pagi', liter: '' })
   const [err, setErr] = useState('')
+  const pg = usePaged(list)
+  const pr = usePaged(rekap, 12)
   const load = useCallback(() => req('/produksi').then(setList).catch(e => setErr(e.message)), [])
   useEffect(() => { load() }, [load])
   useEffect(() => { req('/produksi/rekap?by=' + by).then(setRekap).catch(() => {}) }, [by, list])
@@ -43,8 +46,9 @@ export default function Produksi() {
       <h3>Harian (31 hari terakhir)</h3>
       <table>
         <thead><tr><th>Tanggal</th><th>Pagi</th><th>Sore</th><th>Total</th></tr></thead>
-        <tbody>{list.map(r => <tr key={r.tgl}><td>{tglID(r.tgl)}</td><td>{num(r.pagi)} L</td><td>{num(r.sore)} L</td><td><b>{num(r.total)} L</b></td></tr>)}</tbody>
+        <tbody>{pg.rows.map(r => <tr key={r.tgl}><td>{tglID(r.tgl)}</td><td>{num(r.pagi)} L</td><td>{num(r.sore)} L</td><td><b>{num(r.total)} L</b></td></tr>)}</tbody>
       </table>
+      <Pager {...pg} />
       {!list.length && <Empty text="Belum ada data produksi." />}
     </div>
     <div className="panel tw">
@@ -54,8 +58,9 @@ export default function Produksi() {
       </div>
       <table>
         <thead><tr><th>Periode</th><th>Total</th><th>Hari tercatat</th><th>Rata-rata per hari</th></tr></thead>
-        <tbody>{rekap.map(r => <tr key={r.periode}><td>{r.periode}</td><td><b>{num(r.total)} L</b></td><td>{r.hari}</td><td>{num(r.total / r.hari)} L</td></tr>)}</tbody>
+        <tbody>{pr.rows.map(r => <tr key={r.periode}><td>{r.periode}</td><td><b>{num(r.total)} L</b></td><td>{r.hari}</td><td>{num(r.total / r.hari)} L</td></tr>)}</tbody>
       </table>
+      <Pager {...pr} />
     </div>
   </>)
 }

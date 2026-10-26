@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { req } from '../../api/client'
 import { today, rp, tglID } from '../../utils/format'
-import { Field, Stat, Empty } from '../../components/ui'
+import { Field, Stat, Empty, Pager } from '../../components/ui'
+import { usePaged } from '../../ui/usePaged'
 
 const KAT = { kas: 'Kas', lainnya: 'Lainnya', gaji: 'Gaji pegawai', operasional: 'Operasional', topup_kandang: 'Top up ke kandang' }
 
@@ -12,6 +13,7 @@ export default function KeuanganBO() {
   const [kaForm, setKaForm] = useState({ tgl: today(), jumlah: '' })
   const [form, setForm] = useState({ tgl: today(), arah: 'masuk', kategori: 'kas', jumlah: '', keterangan: '' })
   const [err, setErr] = useState('')
+  const pg = usePaged(d.rows)
   const OPSI = { masuk: ['kas', 'lainnya'], keluar: ['gaji', 'operasional', 'lainnya'] }
   const load = useCallback(() => {
     req('/bo/kas?bulan=' + bulan).then(setD).catch(e => setErr(e.message))
@@ -57,10 +59,11 @@ export default function KeuanganBO() {
     <div className="panel tw">
       <div className="tabs"><input type="month" value={bulan} onChange={e => setBulan(e.target.value)} /></div>
       <table><thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Masuk</th><th>Keluar</th><th></th></tr></thead>
-        <tbody>{d.rows.map(r => <tr key={(r.otomatis ? 'a' : 'm') + r.id}><td>{tglID(r.tgl)}</td>
+        <tbody>{pg.rows.map(r => <tr key={(r.otomatis ? 'a' : 'm') + r.id}><td>{tglID(r.tgl)}</td>
           <td><span className={'pill ' + (r.arah === 'keluar' ? 'keluar' : '')}>{KAT[r.kategori]}</span>{r.otomatis && <span style={{ color: 'var(--muted)', fontSize: 12 }}> otomatis</span>}</td>
           <td>{r.keterangan}</td><td>{r.arah === 'masuk' ? rp(r.jumlah) : ''}</td><td>{r.arah === 'keluar' ? rp(r.jumlah) : ''}</td>
           <td style={{ textAlign: 'right' }}>{!r.otomatis && <button className="del" onClick={async () => { await req(`/bo/kas/${r.id}`, 'DELETE'); load() }}>Hapus</button>}</td></tr>)}</tbody></table>
+      <Pager {...pg} />
       {!d.rows.length && <Empty text="Belum ada transaksi di bulan ini." />}
     </div>
   </>)

@@ -3,8 +3,6 @@ package services
 import (
 	"database/sql"
 	"strings"
-
-	"rejeki-baru-farm/internal/database"
 )
 
 // Kunci menu (sama dengan kunci di frontend)
@@ -36,15 +34,7 @@ func Efektif(role string, m sql.NullString) []string {
 	return strings.Split(m.String, ",")
 }
 
-func MenusOf(username string) (string, []string, bool) {
-	var role string
-	var m sql.NullString
-	if database.DB.QueryRow("SELECT role,menus FROM users WHERE username=?", username).Scan(&role, &m) != nil {
-		return "", nil, false
-	}
-	return role, Efektif(role, m), true
-}
-
+// CleanMenus hanya menyimpan kunci menu yang dikenal (tanpa duplikat).
 func CleanMenus(in []string) string {
 	ok := map[string]bool{}
 	for _, k := range SemuaMenu {
@@ -54,6 +44,7 @@ func CleanMenus(in []string) string {
 	for _, k := range in {
 		if ok[k] {
 			out = append(out, k)
+			ok[k] = false
 		}
 	}
 	return strings.Join(out, ",")

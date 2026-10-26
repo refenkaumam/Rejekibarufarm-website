@@ -1,0 +1,64 @@
+# Produksi: backend Go + Nginx (frontend statis & proxy /api).
+# Database memakai container MariaDB/MySQL yang sudah ada di server (dikelola lewat phpMyAdmin),
+# dijangkau backend lewat network DB_NETWORK. Akses publik lewat cloudflared di network `private-net`.
+# Tidak ada port yang dibuka ke host. Semua nilai rahasia dari file .env (lihat .env.example).
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Public hostname di Cloudflare Tunnel: Service HTTP -> rejeki-web:8080
+
+name: rejeki-farm
+
+services:
+  backend:
+    build: ./backend
+    image: rejeki-farm-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      TZ: Asia/Jakarta
+      PORT: "8080"
+      # Jangan tambahkan parseTime=true: backend membaca kolom tanggal sebagai teks.
+      DB_DSN: "${DB_USER:-rejeki_app}:${DB_PASSWORD:?isi DB_PASSWORD di .env}@tcp(${DB_HOST:-mariadb}:${DB_PORT:-3306})/${DB_NAME:-rejeki}?time_zone=%27%2B07%3A00%27"
+      JWT_SECRET: ${JWT_SECRET:?isi JWT_SECRET di .env (minimal 32 karakter)}
+      ALLOWED_ORIGINS: ${APP_ORIGIN:?isi APP_ORIGIN di .env, contoh https://farm.domainmu.com}
+      # Nginx berada di jaringan Docker internal (alamat privat)
+      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      COOKIE_SECURE: "true"
+      COOKIE_SAMESITE: lax
+      SESSION_TTL: ${SESSION_TTL:-12h}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
+    expose:
+      - "8080"
+    # backend tidak menulis file apa pun
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # internal: dihubungi Nginx; db-net: menjangkau MariaDB. Backend tidak ikut ke private-net.
+    networks:
+      internal:
+      db-net:
+
+  web:
+    build: ./frontend
+    image: rejeki-farm-web
+    restart: unless-stopped
+    depends_on: [backend]
+    volumes:
+      - ./deploy/nginx.docker.conf:/etc/nginx/conf.d/default.conf:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # internal: menghubungi backend; private-net: supaya cloudflared bisa menjangkau web.
+    networks:
+      internal:
+      private-net:
+        aliases: [rejeki-web]
+
+networks:
+  internal:
+    internal: true
+  private-net:
+    external: true
+  db-net:
+    external: true
+    name: ${DB_NETWORK:-db-net}

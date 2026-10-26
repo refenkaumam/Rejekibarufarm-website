@@ -2,13 +2,31 @@ package middleware
 
 import "github.com/gin-gonic/gin"
 
-func CORS(c *gin.Context) {
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	if c.Request.Method == "OPTIONS" {
-		c.AbortWithStatus(204)
-		return
+// CORS hanya mengizinkan origin frontend yang terdaftar di ALLOWED_ORIGINS (dengan cookie).
+func CORS(allowed []string) gin.HandlerFunc {
+	ok := map[string]bool{}
+	for _, o := range allowed {
+		ok[o] = true
 	}
-	c.Next()
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		h := c.Writer.Header()
+		h.Add("Vary", "Origin")
+		if origin != "" && ok[origin] {
+			h.Set("Access-Control-Allow-Origin", origin)
+			h.Set("Access-Control-Allow-Credentials", "true")
+			h.Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token")
+			h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			h.Set("Access-Control-Max-Age", "600")
+		}
+		if c.Request.Method == "OPTIONS" {
+			if origin != "" && !ok[origin] {
+				c.AbortWithStatus(403)
+				return
+			}
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	}
 }

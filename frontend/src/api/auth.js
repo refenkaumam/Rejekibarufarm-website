@@ -1,21 +1,28 @@
-import { req } from './client'
+import { req, setCsrf } from './client'
 
+// Data user di localStorage hanya untuk tampilan (nama, role, menu); hak akses tetap dicek backend.
 export const getUser = () => JSON.parse(localStorage.getItem('user') || 'null')
-export const clearSession = () => localStorage.clear()
+
+// Keluar: backend membatalkan sesi dan menghapus cookie
+export const clearSession = () => {
+  req('/logout', 'POST').catch(() => {})
+  localStorage.clear()
+  setCsrf('')
+}
 
 function simpan(d) {
+  if (d.csrf) setCsrf(d.csrf)
+  localStorage.removeItem('token') // sisa versi lama yang menyimpan token di localStorage
   const u = { username: d.username, role: d.role, menus: d.menus }
   localStorage.setItem('user', JSON.stringify(u))
   return u
 }
 
 export async function login(f) {
-  const d = await req('/login', 'POST', f)
-  localStorage.setItem('token', d.token)
-  return simpan(d)
+  return simpan(await req('/login', 'POST', f))
 }
 
-// Ambil ulang role dan menu terbaru dari server
+// Ambil ulang role, menu, dan token CSRF terbaru dari server
 export async function fetchMe() {
   return simpan(await req('/me'))
 }
